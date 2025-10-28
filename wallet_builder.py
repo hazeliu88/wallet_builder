@@ -4,25 +4,40 @@ import os
 from web3 import Web3
 from solders.keypair import Keypair
 from eth_account import Account
+from mnemonic import Mnemonic  # 新增助记词库
+
+# 初始化助记词生成器
+mnemo = Mnemonic("english")
+# 启用EVM钱包助记词功能（解决AttributeError问题）
+Account.enable_unaudited_hdwallet_features()
 
 
 def generate_evm_wallet():
-    """生成EVM兼容钱包（私钥+地址）"""
-    account = Account.create()
-    # 修复私钥获取方式，适配新版本eth-account
-    private_key = account.key.hex()  # 新版本使用key属性
+    """生成EVM兼容钱包（助记词+私钥+地址）"""
+    # 生成12词助记词
+    mnemonic = mnemo.generate(strength=128)
+    # 通过助记词推导私钥
+    private_key = Account.from_mnemonic(mnemonic).key.hex()
+    # 获取地址
+    address = Account.from_key(private_key).address
     return {
+        "mnemonic": mnemonic,
         "private_key": private_key,
-        "address": account.address
+        "address": address
     }
 
 
 def generate_solana_wallet():
-    """生成Solana钱包（私钥+地址）"""
-    keypair = Keypair()
-    private_key = list(keypair.secret_key)  # 转换为列表便于JSON序列化
+    """生成Solana钱包（助记词+私钥+地址）"""
+    # 生成12词助记词
+    mnemonic = mnemo.generate(strength=128)
+    # 通过助记词推导私钥（Solana使用BIP39标准）
+    seed = mnemo.to_seed(mnemonic)
+    keypair = Keypair.from_seed(seed[:32])  # Solana私钥为32字节
+    private_key = list(keypair.secret_key)
     address = str(keypair.pubkey())
     return {
+        "mnemonic": mnemonic,
         "private_key": private_key,
         "address": address
     }
@@ -39,18 +54,17 @@ def save_to_csv(data, filename, wallet_type):
     """保存数据到CSV文件"""
     with open(f"{filename}.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        # 写入表头
-        writer.writerow(["index", "private_key", "address"])
+        # 写入表头（新增mnemonic列）
+        writer.writerow(["index", "mnemonic", "private_key", "address"])
         # 写入数据
         for i, item in enumerate(data, 1):
-            # Solana私钥需要转换为字符串格式
             priv_key = item["private_key"] if wallet_type == "evm" else str(item["private_key"])
-            writer.writerow([i, priv_key, item["address"]])
+            writer.writerow([i, item["mnemonic"], priv_key, item["address"]])
     print(f"已保存CSV文件: {filename}.csv")
 
 
 def main():
-    print("=== 区块链钱包生成工具 ===")
+    print("=== 区块链钱包生成工具（含助记词版）===")
 
     # 1. 选择钱包类型
     while True:
